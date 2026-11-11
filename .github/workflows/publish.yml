@@ -9,6 +9,7 @@ on:
         type: choice
         options:
           - publish-candidate
+          - verify-candidate
           - promote-latest
 
 permissions:
@@ -49,8 +50,34 @@ jobs:
             exit 1
           fi
           npm publish --tag candidate
-          test "$(npm view @frontstead/ui dist-tags.latest)" = "$latest_before"
-          test "$(npm view @frontstead/ui dist-tags.candidate)" = "$version"
+          for attempt in {1..24}; do
+            latest=$(npm view @frontstead/ui dist-tags.latest 2>/dev/null || true)
+            candidate=$(npm view @frontstead/ui dist-tags.candidate 2>/dev/null || true)
+            if [ "$latest" = "$latest_before" ] && [ "$candidate" = "$version" ]; then
+              exit 0
+            fi
+            echo "Waiting for registry tags (attempt $attempt): latest=$latest candidate=$candidate"
+            sleep 5
+          done
+          echo "Registry tags did not settle to latest=$latest_before candidate=$version" >&2
+          exit 1
+
+      - name: Verify published candidate
+        if: inputs.operation == 'verify-candidate'
+        run: |
+          version=$(node -p "require('./package.json').version")
+          for attempt in {1..24}; do
+            latest=$(npm view @frontstead/ui dist-tags.latest 2>/dev/null || true)
+            candidate=$(npm view @frontstead/ui dist-tags.candidate 2>/dev/null || true)
+            provenance=$(npm view "@frontstead/ui@$version" dist.attestations.provenance.predicateType 2>/dev/null || true)
+            if [ "$latest" != "$version" ] && [ "$candidate" = "$version" ] && [ "$provenance" = "https://slsa.dev/provenance/v1" ]; then
+              exit 0
+            fi
+            echo "Waiting for candidate metadata (attempt $attempt): latest=$latest candidate=$candidate provenance=$provenance"
+            sleep 5
+          done
+          echo "Candidate metadata did not settle for @frontstead/ui@$version" >&2
+          exit 1
 
       - name: Promote verified candidate
         if: inputs.operation == 'promote-latest'
@@ -59,4 +86,14 @@ jobs:
           test "$(npm view @frontstead/ui dist-tags.candidate)" = "$version"
           npm dist-tag add "@frontstead/ui@$version" latest
           npm dist-tag rm @frontstead/ui candidate
-          test "$(npm view @frontstead/ui dist-tags.latest)" = "$version"
+          for attempt in {1..24}; do
+            latest=$(npm view @frontstead/ui dist-tags.latest 2>/dev/null || true)
+            candidate=$(npm view @frontstead/ui dist-tags.candidate 2>/dev/null || true)
+            if [ "$latest" = "$version" ] && [ -z "$candidate" ]; then
+              exit 0
+            fi
+            echo "Waiting for promoted tags (attempt $attempt): latest=$latest candidate=$candidate"
+            sleep 5
+          done
+          echo "Registry tags did not settle to latest=$version with no candidate tag" >&2
+          exit 1
