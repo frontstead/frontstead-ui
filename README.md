@@ -63,7 +63,9 @@ the protected `npm` environment. Run `publish-candidate` first; it publishes the
 package's exact version under the `candidate` tag and proves `latest` did not
 move. After every private consumer passes against that exact version, run
 `promote-latest` to move `latest` to the unchanged candidate and remove the
-temporary tag.
+temporary tag. If npm accepts a publish but registry metadata propagation makes
+the run fail afterward, use `verify-candidate`; it performs no mutation and checks
+the candidate tag and provenance after the registry settles.
 
 ## Migrating From `@frontstead/tokens`
 
