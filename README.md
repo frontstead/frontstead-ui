@@ -56,6 +56,15 @@ npm run consumer:test
 The root barrel intentionally remains the component API. Utilities and theme
 tooling use the explicit `@frontstead/ui/cn` and `@frontstead/ui/theme` paths.
 
+## Releases
+
+The manually dispatched `publish.yml` workflow uses npm trusted publishing and
+the protected `npm` environment. Run `publish-candidate` first; it publishes the
+package's exact version under the `candidate` tag and proves `latest` did not
+move. After every private consumer passes against that exact version, run
+`promote-latest` to move `latest` to the unchanged candidate and remove the
+temporary tag.
+
 ## Migrating From `@frontstead/tokens`
 
 `@frontstead/ui` now owns the token contract. Replace imports mechanically:

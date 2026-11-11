@@ -1,0 +1,62 @@
+name: Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Candidate publish first; promote only after every consumer passes.
+        required: true
+        type: choice
+        options:
+          - publish-candidate
+          - promote-latest
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: npm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.14.0'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Use trusted-publishing npm client
+        run: npm install --global npm@11.21.2
+
+      - name: Install dependencies
+        if: inputs.operation == 'publish-candidate'
+        run: npm ci
+
+      - name: Verify package
+        if: inputs.operation == 'publish-candidate'
+        run: npm test && npm run typecheck && npm run build && npm run tarball:verify && npm run consumer:test
+
+      - name: Publish immutable candidate
+        if: inputs.operation == 'publish-candidate'
+        run: |
+          version=$(node -p "require('./package.json').version")
+          latest_before=$(npm view @frontstead/ui dist-tags.latest)
+          if npm view "@frontstead/ui@$version" version >/dev/null 2>&1; then
+            echo "@frontstead/ui@$version already exists; versions are immutable." >&2
+            exit 1
+          fi
+          npm publish --tag candidate
+          test "$(npm view @frontstead/ui dist-tags.latest)" = "$latest_before"
+          test "$(npm view @frontstead/ui dist-tags.candidate)" = "$version"
+
+      - name: Promote verified candidate
+        if: inputs.operation == 'promote-latest'
+        run: |
+          version=$(node -p "require('./package.json').version")
+          test "$(npm view @frontstead/ui dist-tags.candidate)" = "$version"
+          npm dist-tag add "@frontstead/ui@$version" latest
+          npm dist-tag rm @frontstead/ui candidate
+          test "$(npm view @frontstead/ui dist-tags.latest)" = "$version"
